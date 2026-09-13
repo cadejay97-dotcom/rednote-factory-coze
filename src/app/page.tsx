@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import type { ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +15,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { Tool, Combo, ToolsResponse } from '@/lib/types';
+import type {
+  Tool,
+  Combo,
+  ToolsResponse,
+  PublishHumanGate,
+  PublishMode,
+  PublishPackage,
+  PublishPlatform,
+  PublishJobRecord,
+} from '@/lib/types';
 
 // ─── SSE Stream Reader Hook ───────────────────────────────────
 function useSSEStream() {
@@ -146,6 +156,7 @@ const categoryColors: Record<string, string> = {
   '全链路运营': 'bg-xhs/10 text-xhs border-xhs/20',
   '多平台分发': 'bg-blue-50 text-blue-600 border-blue-200',
   'AI视频生成': 'bg-purple-50 text-purple-600 border-purple-200',
+  '封面生成': 'bg-rose-50 text-rose-600 border-rose-200',
   '数据采集': 'bg-amber-50 text-amber-600 border-amber-200',
   '视频号专属': 'bg-green-50 text-green-600 border-green-200',
   '个人IP': 'bg-pink-50 text-pink-600 border-pink-200',
@@ -549,6 +560,169 @@ function BatchPanel() {
   );
 }
 
+// ─── Cover Image Generator ────────────────────────────────────
+function CoverImagePanel() {
+  const [topic, setTopic] = useState('');
+  const [content, setContent] = useState('');
+  const [coverStyle, setCoverStyle] = useState('爆款封面');
+  const [visualGoal, setVisualGoal] = useState('');
+  const [referenceImage, setReferenceImage] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleReferenceUpload = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setReferenceImage(reader.result);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleGenerate = useCallback(async () => {
+    if (!topic.trim()) return;
+
+    interface Image2Response {
+      imageUrl?: string;
+      prompt?: string;
+      note?: string;
+      error?: string;
+    }
+
+    setLoading(true);
+    setError('');
+    setImageUrl('');
+    setPrompt('');
+    setNote('');
+
+    try {
+      const response = await fetch('/api/image2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, content, coverStyle, visualGoal, referenceImage }),
+      });
+      const data = (await response.json()) as Image2Response;
+      if (!response.ok) throw new Error(data.error || '封面生成失败');
+      if (!data.imageUrl) throw new Error('封面接口未返回图片');
+
+      setImageUrl(data.imageUrl);
+      setPrompt(data.prompt || '');
+      setNote(data.note || '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '封面生成失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [topic, content, coverStyle, visualGoal, referenceImage]);
+
+  const coverStyles = ['爆款封面', '干货卡片', '治愈手账', '专业测评'];
+
+  return (
+    <section id="covers" className="scroll-mt-16">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-8 text-center">
+          <h2 className="text-2xl font-bold text-foreground">image2 封面工厂</h2>
+          <p className="mt-2 text-sm text-muted-foreground">上传参考图 + 输入内容，生成适合小红书图文矩阵的首图封面</p>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-5">
+          <div className="space-y-4 lg:col-span-2">
+            <Card className="border-border/60 bg-white">
+              <CardContent className="space-y-4 p-5">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">封面主题</label>
+                  <Textarea placeholder="例如：普通人如何用 AI 做小红书矩阵" value={topic} onChange={(e) => setTopic(e.target.value)} className="min-h-[72px] resize-none text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">内容要点 <span className="text-muted-foreground">（可选）</span></label>
+                  <Textarea placeholder="粘贴正文、卖点或卡片文案，AI 会提炼成封面视觉信息" value={content} onChange={(e) => setContent(e.target.value)} className="min-h-[92px] resize-none text-xs" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">封面风格</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {coverStyles.map((style) => (
+                      <button key={style} onClick={() => setCoverStyle(style)} className={`rounded-lg border p-2.5 text-left text-xs transition-all ${coverStyle === style ? 'border-xhs bg-xhs/5 text-xhs' : 'border-border/60 text-foreground hover:border-xhs/30'}`}>
+                        {style}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">参考图 <span className="text-muted-foreground">（可选）</span></label>
+                  <Input type="file" accept="image/*" onChange={handleReferenceUpload} className="h-9 text-xs" />
+                  {referenceImage && (
+                    <div className="mt-2 overflow-hidden rounded-lg border border-xhs/20 bg-xhs/5 p-2">
+                      <img src={referenceImage} alt="参考图预览" className="max-h-36 w-full rounded-md object-contain" />
+                      <button onClick={() => setReferenceImage('')} className="mt-2 text-[10px] text-muted-foreground hover:text-xhs">移除参考图</button>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">视觉目标 <span className="text-muted-foreground">（可选）</span></label>
+                  <Input placeholder="例如：像参考图一样有强标题，但更偏干货教程" value={visualGoal} onChange={(e) => setVisualGoal(e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div className="flex gap-3 rounded-lg border border-xhs/20 bg-xhs/5 p-3">
+                  <svg className="h-5 w-5 shrink-0 text-xhs" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <div>
+                    <p className="text-[11px] font-medium text-xhs">推荐实现路线</p>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">真实 image2 负责生图；未配置接口时先用本地 SVG 预览验证工作流。后续可接 Satori/Playwright 批量导出。</p>
+                  </div>
+                </div>
+                <Button onClick={handleGenerate} disabled={!topic.trim() || loading} className="h-10 w-full bg-xhs text-white hover:bg-xhs-light" size="sm">
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      image2 生成中...
+                    </span>
+                  ) : '生成封面图'}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="lg:col-span-3">
+            <Card className="h-full border-border/60 bg-white">
+              <CardContent className="p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-xs font-medium text-foreground">封面预览</span>
+                  {imageUrl && (
+                    <a href={imageUrl} download="rednote-cover.svg" className="text-[11px] text-muted-foreground hover:text-xhs">下载/打开</a>
+                  )}
+                </div>
+                <div className="flex min-h-[520px] items-center justify-center rounded-xl bg-amber-50/30 p-4">
+                  {loading && <div className="skeleton-shimmer h-[420px] w-[315px] rounded-3xl" />}
+                  {!loading && !imageUrl && !error && (
+                    <div className="text-center text-muted-foreground">
+                      <svg className="mx-auto mb-3 h-14 w-14 text-xhs/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                        <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-xs">输入主题或上传参考图后生成封面</p>
+                    </div>
+                  )}
+                  {imageUrl && <img src={imageUrl} alt="生成的小红书封面" className="max-h-[520px] rounded-3xl object-contain shadow-lg" />}
+                  {error && <p className="text-sm text-destructive">{error}</p>}
+                </div>
+                {note && <p className="mt-3 rounded-lg bg-xhs/5 p-3 text-[11px] leading-relaxed text-xhs">{note}</p>}
+                {prompt && (
+                  <details className="mt-3 rounded-lg border border-border/60 bg-white p-3">
+                    <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">查看发送给 image2 的提示词</summary>
+                    <pre className="mt-2 max-h-52 overflow-y-auto whitespace-pre-wrap text-[10px] leading-relaxed text-muted-foreground">{prompt}</pre>
+                  </details>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Multi-Platform Adapt ─────────────────────────────────────
 function AdaptPanel() {
   const [content, setContent] = useState('');
@@ -752,9 +926,204 @@ function RecommendPanel() {
   );
 }
 
+// ─── Publish Assistant ─────────────────────────────────────────
+function PublishAssistantPanel() {
+  const [platform, setPlatform] = useState<PublishPlatform>('xiaohongshu');
+  const [dryRunTarget, setDryRunTarget] = useState<PublishMode>('mock');
+  const [account, setAccount] = useState('主账号');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [assets, setAssets] = useState('');
+  const [job, setJob] = useState<PublishJobRecord | null>(null);
+  const [jobError, setJobError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const requiredHumanGates: PublishHumanGate[] = ['content_review', 'browser_fill_review', 'final_publish_click'];
+
+  const assetList = assets.split('\n').map((item) => item.trim()).filter(Boolean);
+  const publishPackage: PublishPackage = {
+    platform,
+    accountAlias: account,
+    title,
+    body,
+    assetPaths: assetList,
+    mode: 'draft_fill_only',
+    requiredHumanGates,
+    workerRecommendation: 'Local Playwright worker + persistent browser profile; Claude/Claude Code only supervises page-state checks and stops on captcha/auth/unknown modal.',
+  };
+  const packageJson = JSON.stringify({ ...publishPackage, dryRunTarget }, null, 2);
+
+  const copyPackage = useCallback(() => {
+    navigator.clipboard.writeText(packageJson);
+  }, [packageJson]);
+
+  const handlePrepare = useCallback(async () => {
+    setSubmitting(true);
+    setJobError('');
+
+    try {
+      const response = await fetch('/api/publish/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...publishPackage, dryRunTarget }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '创建发布任务失败');
+
+      setJob({
+        jobId: data.jobId,
+        createdAt: new Date().toISOString(),
+        package: data.package,
+        dryRunTarget: data.dryRunTarget,
+        latestStatus: data.status,
+      });
+    } catch (err) {
+      setJobError(err instanceof Error ? err.message : '创建发布任务失败');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [dryRunTarget, publishPackage]);
+
+  const handleRefreshStatus = useCallback(async () => {
+    if (!job?.jobId) return;
+
+    setSubmitting(true);
+    setJobError('');
+    try {
+      const response = await fetch(`/api/publish/status?jobId=${encodeURIComponent(job.jobId)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '读取发布状态失败');
+      setJob(data as PublishJobRecord);
+    } catch (err) {
+      setJobError(err instanceof Error ? err.message : '读取发布状态失败');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [job?.jobId]);
+
+  return (
+    <section id="publish" className="scroll-mt-16">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-8 text-center">
+          <h2 className="text-2xl font-bold text-foreground">发布助手</h2>
+          <p className="mt-2 text-sm text-muted-foreground">先生成本地 publish job，再交给 Playwright worker 做草稿填充和发布前校验</p>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-5">
+          <div className="space-y-4 lg:col-span-2">
+            <Card className="border-border/60 bg-white">
+              <CardContent className="space-y-4 p-5">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">平台</label>
+                  <Select value={platform} onValueChange={(value) => setPlatform(value as PublishPlatform)}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="xiaohongshu">小红书</SelectItem>
+                      <SelectItem value="videohao">视频号（预留）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">dry run 目标</label>
+                  <Select value={dryRunTarget} onValueChange={(value) => setDryRunTarget(value as PublishMode)}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mock">mock 本地验证</SelectItem>
+                      <SelectItem value="real-draft">真实平台草稿页</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">发布账号别名</label>
+                  <Input value={account} onChange={(e) => setAccount(e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">标题</label>
+                  <Input placeholder="复制 AI 生成的标题" value={title} onChange={(e) => setTitle(e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">正文/标签</label>
+                  <Textarea placeholder="粘贴要发布的正文和 #标签" value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[150px] resize-none text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">图片/视频路径 <span className="text-muted-foreground">（每行一个，本地 worker 使用）</span></label>
+                  <Textarea placeholder="/Users/mc/Desktop/covers/cover-01.png" value={assets} onChange={(e) => setAssets(e.target.value)} className="min-h-[90px] resize-none text-xs" />
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button onClick={handlePrepare} disabled={!title.trim() || !body.trim() || submitting} className="h-10 w-full bg-xhs text-white hover:bg-xhs-light" size="sm">
+                    {submitting ? '创建中...' : '创建 publish job'}
+                  </Button>
+                  <Button onClick={copyPackage} disabled={!title.trim() && !body.trim()} variant="outline" className="h-10 w-full" size="sm">
+                    复制发布包 JSON
+                  </Button>
+                </div>
+                {jobError && <p className="text-xs text-destructive">{jobError}</p>}
+              </CardContent>
+            </Card>
+          </div>
+          <div className="space-y-4 lg:col-span-3">
+            <Card className="border-border/60 bg-white">
+              <CardContent className="p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-xs font-medium text-foreground">本地发布 worker 输入包</span>
+                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-600">{dryRunTarget}</Badge>
+                </div>
+                <pre className="max-h-72 overflow-y-auto rounded-xl bg-[#1a1a1a] p-4 text-[11px] leading-relaxed text-white">{packageJson}</pre>
+              </CardContent>
+            </Card>
+            <Card className="border-border/60 bg-white">
+              <CardContent className="space-y-4 p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-semibold text-foreground">最近一次执行状态</h3>
+                    <p className="mt-1 text-[11px] text-muted-foreground">创建 job 后，用 `pnpm publish:worker &lt;jobId&gt;` 在本地跑 worker，再回来刷新状态。</p>
+                  </div>
+                  <Button onClick={handleRefreshStatus} disabled={!job?.jobId || submitting} variant="outline" size="sm">刷新状态</Button>
+                </div>
+                {!job && <p className="text-[11px] text-muted-foreground">还没有创建 publish job。</p>}
+                {job && (
+                  <div className="space-y-3 text-[11px] text-muted-foreground">
+                    <div className="rounded-lg bg-secondary/40 p-3">
+                      <p><span className="font-medium text-foreground">jobId：</span>{job.jobId}</p>
+                      <p className="mt-1"><span className="font-medium text-foreground">状态：</span>{job.latestStatus.status}</p>
+                      <p className="mt-1"><span className="font-medium text-foreground">说明：</span>{job.latestStatus.message}</p>
+                      {job.latestStatus.stopReason && <p className="mt-1"><span className="font-medium text-foreground">停止原因：</span>{job.latestStatus.stopReason}</p>}
+                      {job.latestStatus.observedUrl && <p className="mt-1 break-all"><span className="font-medium text-foreground">页面 URL：</span>{job.latestStatus.observedUrl}</p>}
+                      {job.latestStatus.screenshotPath && <p className="mt-1 break-all"><span className="font-medium text-foreground">截图路径：</span>{job.latestStatus.screenshotPath}</p>}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {job.latestStatus.checklist.map((item) => (
+                        <Card key={item.label} className="border-border/60 bg-white">
+                          <CardContent className="p-4">
+                            <h4 className="text-xs font-bold text-foreground">{item.label}</h4>
+                            <p className={`mt-2 text-[11px] ${item.passed ? 'text-emerald-600' : 'text-amber-700'}`}>{item.passed ? '已通过' : '待处理'}</p>
+                            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{item.detail}</p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="border-xhs/20 bg-xhs/5">
+              <CardContent className="p-4">
+                <h3 className="text-xs font-semibold text-xhs">最佳实践结论</h3>
+                <ul className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                  <li>- 优先官方 API；没有 API 时用 Playwright 填草稿，不做反风控/验证码绕过。</li>
+                  <li>- LLM 负责内容包、状态判断、失败分类；本地 worker 负责浏览器执行与截图留档。</li>
+                  <li>- 当前默认只做到发布前确认，不自动点击真实发布按钮。</li>
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Tools Section ────────────────────────────────────────────
 function ToolsSection({ tools }: { tools: Tool[] }) {
-  const categories = ['全部', '全链路运营', '多平台分发', 'AI视频生成', '数据采集', '视频号专属', '个人IP'];
+  const categories = ['全部', '全链路运营', '多平台分发', 'AI视频生成', '封面生成', '数据采集', '视频号专属', '个人IP'];
   const [activeCategory, setActiveCategory] = useState('全部');
 
   return (
@@ -818,8 +1187,10 @@ export default function HomePage() {
     { id: 'topics', label: '选题' },
     { id: 'score', label: '评分' },
     { id: 'batch', label: '矩阵' },
+    { id: 'covers', label: '封面' },
     { id: 'adapt', label: '多平台' },
     { id: 'video', label: '视频' },
+    { id: 'publish', label: '发布' },
     { id: 'recommend', label: '推荐' },
     { id: 'tools', label: '工具库' },
     { id: 'combos', label: '方案' },
@@ -867,7 +1238,7 @@ export default function HomePage() {
             一站式小红书<span className="text-xhs">内容创作</span>工厂
           </h1>
           <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground">
-            爆款选题发现 + AI笔记生成 + 质量评分 + 矩阵批量 + 多平台适配 + 视频脚本 + 智能工具推荐
+            爆款选题发现 + AI笔记生成 + 质量评分 + 矩阵批量 + image2封面 + 多平台适配 + 视频脚本 + 发布助手 + 智能工具推荐
           </p>
           <div className="mt-6 flex items-center justify-center gap-3">
             <a href="#factory">
@@ -884,8 +1255,10 @@ export default function HomePage() {
               { icon: '🔥', title: '爆款选题', desc: '6大公式·趋势分析', color: 'text-amber-500' },
               { icon: '📊', title: '质量评分', desc: '5维度100分', color: 'text-emerald-500' },
               { icon: '📋', title: '矩阵批量', desc: '一选题多条差异化', color: 'text-blue-500' },
+              { icon: '🖼️', title: 'image2封面', desc: '参考图生成首图', color: 'text-rose-500' },
               { icon: '🔄', title: '多平台适配', desc: '4平台风格改写', color: 'text-indigo-500' },
               { icon: '🎬', title: '视频脚本', desc: 'MoneyPrinter可用', color: 'text-purple-500' },
+              { icon: '🚀', title: '发布助手', desc: '草稿填充·人工确认', color: 'text-orange-500' },
               { icon: '🎯', title: '人设卡', desc: 'ip-publisher人设', color: 'text-pink-500' },
               { icon: '🧭', title: '智能推荐', desc: '25+工具精准匹配', color: 'text-teal-500' },
             ].map((f) => (
@@ -911,11 +1284,17 @@ export default function HomePage() {
       {/* Matrix Batch */}
       <section className="py-10"><BatchPanel /></section>
 
+      {/* Cover Image */}
+      <section className="py-10"><CoverImagePanel /></section>
+
       {/* Multi-Platform Adapt */}
       <section className="py-10"><AdaptPanel /></section>
 
       {/* Video Script */}
       <section className="py-10"><VideoScriptPanel /></section>
+
+      {/* Publish Assistant */}
+      <section className="py-10"><PublishAssistantPanel /></section>
 
       {/* AI Recommender */}
       <section className="py-10"><RecommendPanel /></section>
